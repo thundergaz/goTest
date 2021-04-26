@@ -1,3 +1,3 @@
-module unitTest
+module goTest
 
 go 1.16

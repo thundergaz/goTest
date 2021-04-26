@@ -1,4 +1,4 @@
-package goUnitTest
+package goTest
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func scanFold() {
+func ScanFold() {
 	filepath.Walk("./",
 		func(path string, f os.FileInfo, err error) error {
 			if strings.HasSuffix(path, ".go") {

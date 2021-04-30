@@ -42,6 +42,10 @@ type FunctionInfo struct {
 	FunctionName string
 	// 源程序的方法类型 ExecuteTpl TransactionTpl DbEngine
 	RequestType string
+	// 源程序方法的入参
+	RequestBody string
+	// 源程序方法的入参
+	ResponseBody string
 	// 需要打桩的方法
 	NeedMock []Monkey
 }
@@ -51,32 +55,31 @@ type Monkey struct {
 	// 可以通过结构体查出，这里生成的时候直接查出存放
 	ImportAddress string
 	// 要Mock函数的名称
-	FunctionName   string
+	FunctionName string
 	// 函数的参数
-	RequestString  string
+	RequestString string
 	// 函数的返回体
 	ResponseString string
 }
 
 func ScanFold() {
-	filepath.Walk("./",
+	err := filepath.Walk("./",
 		func(path string, f os.FileInfo, err error) error {
-			// TODO:如果是目标文件夹创建base_auto_test.go
-
+			// 这里控制生成规则
 			if strings.HasSuffix(path, "impl.go") {
 				// 查找其它测试文件
 				if strings.Contains(path, "test") {
 					fmt.Println("测试文件。")
 				} else {
-					// 查找标准备测试文件
+					// 生成标准备测试文件名
 					testFileName := strings.Replace(path, ".go", "", 1) + "_auto_test.go"
-					// 如果文件存在， 则清除测试文件
+					// 如果文件存在， 则清除测试文件，只会清除自动生成的测试文件
 					if _, err := os.Stat(testFileName); os.IsExist(err) {
 						removeErr := os.Remove(testFileName)
 						utils.MustCheck(removeErr)
 					}
 					// 创建base测试文件
-					testBase := filepath.Dir(path) + "/base_test.go"
+					testBase := filepath.Dir(path) + "\\base_test.go"
 					if _, err := os.Stat(testBase); os.IsNotExist(err) {
 						createBaseTest(testBase)
 					}
@@ -86,10 +89,8 @@ func ScanFold() {
 						fmt.Println("创建文件出错。")
 					} else {
 						// 写入内容
-						if strings.Contains(path, "impl.go") {
-							createTestError := buildTestFile(path, f)
-							utils.MustCheck(createTestError)
-						}
+						createTestError := buildTestFile(path, f)
+						utils.MustCheck(createTestError)
 						// 关闭文件
 						closeErr := f.Close()
 						utils.MustCheck(closeErr)
@@ -103,6 +104,9 @@ func ScanFold() {
 			}
 			return nil
 		})
+	if err != nil {
+		return 
+	}
 }
 
 // 通过模版生成测试文件
@@ -141,7 +145,7 @@ func buildTestFile(sourcePath string, file *os.File) error {
 			if ok == io.EOF {
 				break
 			}
-			// 不是注释行时，分析
+			// 不是注释行时，进行分析
 			if canWritable && canWrite {
 				// 获取package name
 				if strings.Contains(string(s), "package") {
@@ -200,21 +204,28 @@ func buildTestFile(sourcePath string, file *os.File) error {
 						// 从正文中找到方法的类型 -- (以config.开头的方法。)
 						regFunctionType := regexp.MustCompile(`.*config\.([\w\W]+?)\..*`)
 						function.RequestType = regFunctionType.ReplaceAllString(FunctionContext.context, "$1")
-						// 找到上游类的方法 -- (需要打桩的方法)
-						// outData.SourceStruct.StructFields
+						// 找到入参
+						requestReg := regexp.MustCompile(`func (\([^)]*\))[^)]*(\([^)]*\))([^{]*).*`)
+						function.RequestBody = requestReg.ReplaceAllString(FunctionContext.context, "$2")
+						function.ResponseBody = requestReg.ReplaceAllString(FunctionContext.context, "$3")
+						// 找到上游类的方法 -- (上游类字段outData.SourceStruct.StructFields可能有多个上游)
 						for _, field := range outData.SourceStruct.StructFields {
-							re := regexp.MustCompile(field.FieldName + `\.([\w\W]+?)\(`)
+							re := regexp.MustCompile(field.FieldName + `\.([\w\W]+?)\(([^\)]*)\)`)
+							// 找到该上游类的方法集合 方法可能会有多个
 							mockFunctionArr := re.FindAll([]byte(FunctionContext.context), -1)
 							for _, v := range mockFunctionArr {
-								reg := regexp.MustCompile(field.FieldName + `\.([\w\W]+?)\(`)
+								// 找到方法名称
+								// TODO:找到请求参数与返回类型
+								reg := regexp.MustCompile(field.FieldName + `\.([\w\W]+?)\(([^\)]*)\)`)
 								function.NeedMock = append(function.NeedMock, Monkey{
-									StructField: field.FieldName,
-									ImportAddress: field.ImportAddress,
-									FunctionName: reg.ReplaceAllString(string(v), "$1"),
+									StructField:    field.FieldName,
+									ImportAddress:  field.ImportAddress,
+									RequestString:  reg.ReplaceAllString(string(v), "$2"),
+									ResponseString: "error",
+									FunctionName:   reg.ReplaceAllString(string(v), "$1"),
 								})
 							}
 						}
-						fmt.Println(function.NeedMock)
 						outData.FunctionList = append(outData.FunctionList, function)
 						functionStart = false
 					}
@@ -224,14 +235,17 @@ func buildTestFile(sourcePath string, file *os.File) error {
 				canWritable = true
 			}
 		}
-		// 创建模板数据
-		t, err := template.New("testFile").Funcs(FuncMap()).Parse(tpl.TestTemplate)
+		// TODO:如果是普通的文件没有结构体名称，也不会匹配到方法列表只会创建一个空文件
+		if outData.SourceStruct.StructName != "" {
+			// 创建模板数据
+			t, err := template.New("testFile").Funcs(FuncMap()).Parse(tpl.TestTemplate)
 
-		if t != nil {
-			err = t.Execute(file, outData)
-		}
-		if err != nil {
-			fmt.Println(err.Error())
+			if t != nil {
+				err = t.Execute(file, outData)
+			}
+			if err != nil {
+				fmt.Println(err.Error())
+			}
 		}
 	}
 	return nil
@@ -307,7 +321,7 @@ func getBracketsLen(context string) int {
 	return len(leftReg.ReplaceAllString(context, ""))
 }
 func checkSpiltRule(r rune) bool {
-	// 空格 32
+	// 使用空格或制表符，把字串分隔成字段
 	if r < 33 {
 		return true
 	}
@@ -316,8 +330,24 @@ func checkSpiltRule(r rune) bool {
 func FuncMap() template.FuncMap {
 	out := utils.FuncMap()
 	out["buildContent"] = BuildContent
+	out["setRequest"] = SetRequest
+	out["deriveType"] = DeriveType
 	return out
 }
+
+// BuildContent 目前生成正文需要根据每种类型来自定义
 func BuildContent(content Monkey) string {
-	return "test.test.test"
+	return "return nil"
+}
+func SetRequest(req string) string {
+	// TODO:要根据类型区分以下为ExecuteTpl类型时 入参个数与类型基本固定，可以使用简便方法
+	// (ctx context.Context, req *pb.QueryContractDetailRequest,	rsp *pb.QueryContractDetailResponse)
+	reg := regexp.MustCompile(`.*\*([^,]*).*\*([^)]*).*`)
+	return reg.ReplaceAllString(req, "&$1{}, &$2{}")
+}
+
+// DeriveType 通过函数正文推导出字段类型字符串
+func DeriveType(field string, functionContext string) string {
+
+	return ""
 }

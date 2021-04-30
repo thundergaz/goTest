@@ -23,16 +23,15 @@ func Test{{ .FileName | camelCase }}(t *testing.T) {
 	suite.Run(t, s)
 }
 {{range $i := .FunctionList }}
-// {{ $i.FunctionName }}
-func (s *{{ $.FileName | camelCase }}Suite) Test{{ $.FileName | camelCase }}_{{ $i.FunctionName }}() {
-{{/* mock 数据 start */}}{{range $e := $i.NeedMock }}
+func (s {{ $.FileName | camelCase }}Suite) Test{{ $.FileName | camelCase }}_{{ $i.FunctionName }}() {
+{{range $e := $i.NeedMock }}
 	gomonkey.ApplyMethod(reflect.TypeOf(&s.{{ $.SourceNickName }}.{{ $e.StructField }}), "{{ $e.FunctionName }}",
-		func(_ {{/* mock方法的类型 */}}*{{ $e.ImportAddress }}, _ context.Context{{ $e.RequestString }}) {{ $e.ResponseString }} {
+		func(_ *{{ $e.ImportAddress }}, _ context.Context{{ $e.RequestString }}) {{ $e.ResponseString }} {
 			{{ . | buildContent }}
 		})
-{{/* mock 数据 end */}}{{end}}
+{{end}}
 	convey.Convey("Test{{ $.FileName | camelCase }}_{{ $i.FunctionName }}", s.T(), func() {
-		err := s.{{ $.SourceNickName }}.{{ $i.FunctionName }}(context.Background() {{ /* 主函数请求参数 */}})
+		err := s.{{ $.SourceNickName }}.{{ $i.FunctionName }}(context.Background(), {{ $i.RequestBody | setRequest }})
 		convey.So(err, convey.ShouldBeNil)
 	})
 }
@@ -41,20 +40,25 @@ func (s *{{ $.FileName | camelCase }}Suite) Test{{ $.FileName | camelCase }}_{{ 
 var BaseTpl = `package {{ .PackageName }}
 
 import (
+	"git.code.oa.com/soho/finance/infrastructure/utils"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/suite"
 )
 
 type Suite struct {
 	suite.Suite
+	mock sqlmock.Sqlmock
 }
 
-// SetupSuite
 func (s *Suite) SetupSuite() {
+	s.mock = utils.SetupSuite()
 }
-// BeforeTest
+
 func (s *Suite) BeforeTest(_, _ string) {
+	s.mock.ExpectBegin()
+	s.mock.ExpectCommit()
 }
-// AfterTest
+
 func (s *Suite) AfterTest(_, _ string) {
 	//require.NoError(s.T(), s.mock.ExpectationsWereMet())
 }

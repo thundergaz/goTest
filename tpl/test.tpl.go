@@ -34,7 +34,7 @@ func (s {{ $.FileName | camelCase }}Suite) Test{{ $.FileName | camelCase }}_{{ $
 	})
 	{{ end }}
 	convey.Convey("Test{{ $.FileName | camelCase }}_{{ $i.FunctionName }}", s.T(), func() {
-		err := s.{{ $.SourceNickName }}.{{ $i.FunctionName }}(context.Background(){{ $i.RequestBody | setRequest }})
+		{{ $i.ResponseBody | setResponse }} := s.{{ $.SourceNickName }}.{{ $i.FunctionName }}(context.Background(){{ $i.RequestBody | setRequest }})
 		convey.So(err, convey.ShouldBeNil)
 	})
 }

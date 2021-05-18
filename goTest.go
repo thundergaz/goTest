@@ -317,7 +317,7 @@ func (t *TextFileModule) createBaseTest(pathStr string) {
 	utils.MustCheck(createErr)
 	// 创建模板数据
 	s, err := template.New("testFile").Funcs(FuncMap()).Parse(tpl.BaseTpl)
-	if t != nil {
+	if s != nil {
 		err = s.Execute(f, t)
 	}
 	if err != nil {
@@ -337,7 +337,22 @@ func FuncMap() template.FuncMap {
 	out := utils.FuncMap()
 	out["setRequest"] = SetRequest
 	out["mockFRequest"] = MockFRequest
+	out["setResponse"] = SetResponse
 	return out
+}
+
+func SetResponse(res string) string  {
+	resStr := strings.Replace(strings.Replace(res, "(", "", -1), ")", "", -1)
+	resArr := strings.Split(resStr, ",")
+	var result string
+	for i := range resArr {
+		if len(resArr) == i + 1 {
+			result += "err"
+		} else {
+			result += "_, "
+		}
+	}
+	return result
 }
 
 func SetRequest(req string) string {
